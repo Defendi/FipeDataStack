@@ -13,7 +13,22 @@ def process_vehicle_types(is_local=False, local_output_file=None):
         local_output_file (str): Caminho para arquivo de saída local (quando is_local=True)
     """
     fipe_api = FipeAPI()
-    queue_url = os.getenv('SQS_URL', 'https://sqs.dummy-url-for-local-testing.com')
+    queue_url = os.getenv('SQS_OUTPUT_URL')
+    stage = os.getenv('STAGE')
+    
+    if not queue_url and not is_local:
+        error_msg = "Variável de ambiente SQS_OUTPUT_URL não definida"
+        print(error_msg)
+        return {
+            'statusCode': 500, 
+            'body': error_msg
+        }
+    
+    if is_local:
+        queue_url = 'https://sqs.dummy-url-for-local-testing.com'
+    
+    print(f"Usando fila de saída: {queue_url}")
+    
     vehicle_types = [3, 1, 2]  # 1: Car, 2: Motorcycle, 3: Truck
     delay = 1.0  # Delay aumentado para 1 segundo
 
@@ -31,9 +46,12 @@ def process_vehicle_types(is_local=False, local_output_file=None):
 
             print(f"Found {len(brands)} brands for vehicle type {vehicle_type}.")
 
-            for brand in brands:
-                brand_code = brand.get('Value')
-                brand_name = brand.get('Label')
+            for index, brand in enumerate(brands, start=1):
+                if stage == 'dev' and index > 3:
+                    print(f"Skipping brand {brand.get('Label')} for vehicle type {vehicle_type} in dev stage.")
+                    continue
+                brand_code = str(brand.get('Value'))
+                brand_name = str(brand.get('Label'))
                 
                 if not (brand_code and brand_name):
                     print(f"Missing 'Value' or 'Label' in brand: {brand}")
@@ -56,6 +74,7 @@ def process_vehicle_types(is_local=False, local_output_file=None):
                 else:
                     # Enviar para SQS quando estiver no Lambda
                     fipe_api.send_message_sqs(queue_url, message)
+                    print(f"Message sent to SQS for brand '{brand_name}'")
                 
                 time.sleep(delay)
 
